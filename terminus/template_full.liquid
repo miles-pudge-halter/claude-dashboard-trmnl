@@ -1,108 +1,123 @@
 <!--
   Claude Code Dashboard — Terminus full layout, codex-bar inspired.
 
-  Layout sketch:
-    ┌──────────────────────────────────────────────────────────────┐
-    │ Session  ▰▰▰▰▰▱▱▱▱▱  73% left              Resets in 2h 27m  │
-    │ Weekly   ▰▰▱▱▱▱▱▱▱▱┃  84% left · 33% reserve · in 3d 13h     │
-    ├──────────────────────────────────┬──────────────────────────┤
-    │ Today                            │ Last 30 days              │
-    │ $266 · 22M tok                   │ $552 · 261M tok           │
-    │ 213 msgs · 98% cache · $335 saved│ €18/day avg · 5 days     │
-    ├──────────────────────────────────┴──────────────────────────┤
-    │ 4 running · 4 today · 9 week · 67 total · 3d streak · 3.4h  │
-    ├──────────────────────────────────────────────────────────────┤
-    │ Claude · 7 plugins · 5 MCPs · opus 100%   May 7 · 1:46PM    │
-    └──────────────────────────────────────────────────────────────┘
+  Layout uses the framework's `gap--space-between` on a layout--col so the
+  three sections (bars / costs / activity items) distribute vertically
+  across the full screen instead of clustering in the middle. The
+  `layout:has(+.title_bar)` rule handles the height math relative to the
+  title bar at the bottom.
 
-  Required wrappers (see reference_trmnl_framework memory + Terminus's
-  app/aspects/extensions/defaults.rb): {{extension.css_classes}} for the
-  framework theme variables, view view--full for layout sizing.
+  Required outer wrappers:
+    {{extension.css_classes}}    binds the per-device theme variables
+                                 (screen, screen--Nbit, screen--md/lg)
+                                 that drive progress-bar fill colors.
+    view view--full              gives the inner layout a sized box.
 -->
 
 <div class="{{extension.css_classes}}">
 <div class="view view--full">
 
-<div class="layout layout--col gap--small">
+<div class="layout layout--col gap--space-between">
 
-  {% if source_1.has_rate_limits %}
-  <div class="progress-bar progress-bar--small stretch-x">
-    <div class="content">
-      <span class="label">Session</span>
-      <span class="value value--xxsmall">{{ source_1.session_pct_left }}% left · resets in {{ source_1.session_eta }}</span>
+  <!-- ───────────── rate-limit bars ───────────── -->
+  <div class="flex flex--col gap--small flex--stretch-x">
+
+    <div class="progress-bar stretch-x">
+      <div class="content">
+        <span class="label label--small">Session</span>
+        <span class="value value--xxsmall">
+          {{ source_1.session_pct_left }}% left · resets in {{ source_1.session_eta }}
+        </span>
+      </div>
+      <div class="track">
+        <div class="fill" style="width:{{ source_1.session_pct }}%"></div>
+        <div class="fill" style="width:2px;left:{{ source_1.session_pace_pct }}%;background:#000;"></div>
+      </div>
     </div>
-    <div class="track">
-      <div class="fill" style="width:{{ source_1.session_pct }}%"></div>
-      <div class="fill" style="width:2px;left:{{ source_1.session_pace_pct }}%;background:#000;"></div>
+
+    <div class="progress-bar stretch-x">
+      <div class="content">
+        <span class="label label--small">Weekly</span>
+        <span class="value value--xxsmall">
+          {{ source_1.week_all_pct_left }}% left{% if source_1.week_all_reserve_pct != "0" %} · {{ source_1.week_all_reserve_pct }}% reserve{% endif %} · resets in {{ source_1.week_all_eta }}
+        </span>
+      </div>
+      <div class="track">
+        <div class="fill" style="width:{{ source_1.week_all_pct }}%"></div>
+        <div class="fill" style="width:2px;left:{{ source_1.week_all_pace_pct }}%;background:#000;"></div>
+      </div>
     </div>
+
   </div>
 
-  <div class="progress-bar progress-bar--small stretch-x">
-    <div class="content">
-      <span class="label">Weekly</span>
-      <span class="value value--xxsmall">{{ source_1.week_all_pct_left }}% left{% if source_1.week_all_reserve_pct != "0" %} · {{ source_1.week_all_reserve_pct }}% reserve{% endif %} · resets in {{ source_1.week_all_eta }}</span>
-    </div>
-    <div class="track">
-      <div class="fill" style="width:{{ source_1.week_all_pct }}%"></div>
-      <div class="fill" style="width:2px;left:{{ source_1.week_all_pace_pct }}%;background:#000;"></div>
-    </div>
-  </div>
-  {% else %}
-  <div class="grid grid--cols-4">
+  <!-- ───────────── cost / efficiency hero ───────────── -->
+  <div class="grid grid--cols-2 gap--xlarge">
+
     <div class="flex flex--col flex--stretch-x">
       <span class="label label--small">Today</span>
-      <span class="value value--small">${{ source_1.today_cost }}</span>
+      <span class="value value--large">${{ source_1.today_cost }}</span>
+      <span class="value value--xxsmall">
+        {{ source_1.today_tokens }} tokens · {{ source_1.today_msgs }} msgs
+      </span>
+      <span class="value value--xxsmall">
+        {{ source_1.cache_pct }}% cache · ${{ source_1.cache_savings }} saved
+      </span>
     </div>
+
     <div class="flex flex--col flex--stretch-x">
+      <span class="label label--small">Last 30 days</span>
+      <span class="value value--large">${{ source_1.last_30d_cost }}</span>
+      <span class="value value--xxsmall">
+        {{ source_1.last_30d_tokens }} tokens · {{ source_1.last_30d_msgs }} msgs
+      </span>
+      <span class="value value--xxsmall">
+        ${{ source_1.last_30d_avg }}/day avg · {{ source_1.last_30d_active_days }} active days
+      </span>
+    </div>
+
+  </div>
+
+  <!-- ───────────── activity items ───────────── -->
+  <div class="grid grid--cols-6">
+
+    <div class="flex flex--col flex--stretch-x">
+      <span class="value value--medium">{{ source_1.active_now }}</span>
+      <span class="label label--small">Running</span>
+    </div>
+
+    <div class="flex flex--col flex--stretch-x">
+      <span class="value value--medium">{{ source_1.sessions_today }}</span>
+      <span class="label label--small">Today</span>
+    </div>
+
+    <div class="flex flex--col flex--stretch-x">
+      <span class="value value--medium">{{ source_1.week_sessions }}</span>
       <span class="label label--small">Week</span>
-      <span class="value value--small">${{ source_1.week_cost }}</span>
     </div>
+
     <div class="flex flex--col flex--stretch-x">
-      <span class="label label--small">Last 30d</span>
-      <span class="value value--small">${{ source_1.last_30d_cost }}</span>
+      <span class="value value--medium">{{ source_1.all_sessions }}</span>
+      <span class="label label--small">Total</span>
     </div>
+
     <div class="flex flex--col flex--stretch-x">
-      <span class="label label--small">All Time</span>
-      <span class="value value--small">${{ source_1.all_time_cost }}</span>
-    </div>
-  </div>
-  {% endif %}
-
-  <div class="grid grid--cols-2 gap--medium">
-
-    <div class="flex flex--col gap--xsmall">
-      <span class="label label--filled">Today</span>
-      <div class="flex flex--row gap--small">
-        <span class="value value--medium">${{ source_1.today_cost }}</span>
-        <span class="value value--xxsmall">· {{ source_1.today_tokens }} tok</span>
-      </div>
-      <span class="value value--xxsmall">{{ source_1.today_msgs }} msgs · {{ source_1.cache_pct }}% cache · ${{ source_1.cache_savings }} saved</span>
+      <span class="value value--medium">{{ source_1.streak }}d</span>
+      <span class="label label--small">Streak</span>
     </div>
 
-    <div class="flex flex--col gap--xsmall">
-      <span class="label label--filled">Last 30 days</span>
-      <div class="flex flex--row gap--small">
-        <span class="value value--medium">${{ source_1.last_30d_cost }}</span>
-        <span class="value value--xxsmall">· {{ source_1.last_30d_tokens }} tok</span>
-      </div>
-      <span class="value value--xxsmall">${{ source_1.last_30d_avg }}/day avg · {{ source_1.last_30d_active_days }} active days</span>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="value value--medium">{{ source_1.hours_today }}</span>
+      <span class="label label--small">Coded</span>
     </div>
 
   </div>
 
-  <div class="flex flex--row flex--justify-between gap--small">
-    <span class="value value--xxsmall">{{ source_1.active_now }} running</span>
-    <span class="value value--xxsmall">· {{ source_1.sessions_today }} today</span>
-    <span class="value value--xxsmall">· {{ source_1.week_sessions }} week</span>
-    <span class="value value--xxsmall">· {{ source_1.all_sessions }} total</span>
-    <span class="value value--xxsmall">· {{ source_1.streak }}d streak</span>
-    <span class="value value--xxsmall">· {{ source_1.hours_today }} coded</span>
-  </div>
-
-</div>
+</div><!-- layout layout--col gap--space-between -->
 
 <div class="title_bar">
-  <span class="title">Claude · {{ source_1.plugin_count }} plugins · {{ source_1.mcp_count }} MCPs · {{ source_1.primary_model }} {{ source_1.primary_pct }}%</span>
+  <span class="title">
+    Claude · {{ source_1.plugin_count }} plugins · {{ source_1.mcp_count }} MCPs · {{ source_1.primary_model }} {{ source_1.primary_pct }}%{% if source_1.machines and source_1.machines != "1" %} · {{ source_1.machines }} machines{% endif %}
+  </span>
   <span class="instance">{{ source_1.updated_at }}</span>
 </div>
 
