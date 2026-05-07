@@ -115,22 +115,38 @@ def maybe_run_scraper() -> dict:
         "session_pct": _get("session", "pct", "0"),
         "session_reset": session_reset,
         "session_reset_short": _strip_tz(session_reset),
+        "session_resets_at_iso": _get("session", "resets_at_iso", ""),
         "week_all_pct": _get("week_all", "pct", "0"),
         "week_all_reset": week_all_reset,
         "week_all_reset_short": _strip_tz(week_all_reset),
+        "week_all_resets_at_iso": _get("week_all", "resets_at_iso", ""),
         "week_sonnet_pct": _get("week_sonnet", "pct", "0"),
         "week_sonnet_reset": week_sonnet_reset,
         "week_sonnet_reset_short": _strip_tz(week_sonnet_reset),
+        "week_sonnet_resets_at_iso": _get("week_sonnet", "resets_at_iso", ""),
         "extra_pct": _get("extra", "pct", "0"),
         "extra_spent": _get("extra", "spent", "0"),
         "extra_limit": _get("extra", "limit", "0"),
         "extra_reset": _strip_tz(extra_reset),
+        "extra_currency": _get("extra", "currency", "USD"),
         "has_rate_limits": True,
     }
 
 
+def _rolling_30d() -> dict:
+    """Add rolling-30d cost/token totals; never blocks the main flow."""
+    try:
+        import rolling_30d  # noqa: WPS433 — local import keeps optional cost off cold path
+        return rolling_30d.scan()
+    except Exception as e:  # noqa: BLE001 — broad catch is intentional; this is a non-critical augmentation
+        sys.stderr.write(f"rolling_30d failed: {e}\n")
+        return {}
+
+
 def merge_payload() -> dict:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     stats = session_stats.gather_stats()
+    rolling = _rolling_30d()
 
     # Zeroed placeholders for the rate-limit fields. Overridden by the scraper
     # output below when running on a machine with pexpect+pyte (macOS / Linux).
@@ -154,7 +170,9 @@ def merge_payload() -> dict:
         **rate_limit_defaults,
         **rate_limits,
         **stats,
+        **rolling,
         "updated_at": datetime.now().strftime("%b %d at %I:%M%p").replace(" 0", " "),
+        "updated_at_iso": datetime.now().astimezone().isoformat(),
     }
 
 

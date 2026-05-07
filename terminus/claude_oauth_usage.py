@@ -175,6 +175,12 @@ def _money(value) -> str:
     return f"{amount:.2f}".rstrip("0").rstrip(".") or "0"
 
 
+def _iso(window: Optional[dict]) -> str:
+    if not isinstance(window, dict):
+        return ""
+    return str(window.get("resets_at") or "")
+
+
 def map_response(api: dict) -> dict:
     five_hour = api.get("five_hour") or {}
     seven_day = api.get("seven_day") or {}
@@ -182,17 +188,27 @@ def map_response(api: dict) -> dict:
     extra = api.get("extra_usage") or {}
 
     return {
-        "session": {"pct": _pct(five_hour), "reset": _reset(five_hour)},
-        "week_all": {"pct": _pct(seven_day), "reset": _reset(seven_day)},
+        "session": {
+            "pct": _pct(five_hour),
+            "reset": _reset(five_hour),
+            "resets_at_iso": _iso(five_hour),
+        },
+        "week_all": {
+            "pct": _pct(seven_day),
+            "reset": _reset(seven_day),
+            "resets_at_iso": _iso(seven_day),
+        },
         "week_sonnet": {
             "pct": _pct(seven_day_sonnet),
             "reset": _reset(seven_day_sonnet),
+            "resets_at_iso": _iso(seven_day_sonnet),
         },
         "extra": {
             "spent": _money(extra.get("used_credits")),
             "limit": _money(extra.get("monthly_limit")),
             "pct": _pct({"utilization": extra.get("utilization")}),
             "reset": _reset(extra),
+            "currency": str(extra.get("currency") or "USD"),
         },
     }
 

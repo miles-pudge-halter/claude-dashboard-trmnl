@@ -40,10 +40,11 @@ import re
 import sys
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 CONFIG_PATH = Path("/etc/terminus-dashboard.env")
+DEFAULT_OUTPUT_PATH = "/opt/terminus-dashboard/merged.json"
 
 
 def load_config() -> dict[str, str]:
@@ -56,10 +57,11 @@ def load_config() -> dict[str, str]:
             continue
         key, _, value = line.partition("=")
         out[key.strip()] = value.strip().strip('"').strip("'")
-    for required in ("SOURCE_URLS", "MERGED_GIST_ID", "GH_TOKEN"):
+    for required in ("SOURCE_URLS",):
         if not out.get(required):
             sys.exit(f"config missing {required}")
     out.setdefault("MERGED_GIST_FILENAME", "data.json")
+    out.setdefault("MERGED_OUTPUT_PATH", DEFAULT_OUTPUT_PATH)
     return out
 
 
@@ -215,16 +217,113 @@ RATE_LIMIT_FIELDS = (
     "extra_limit",
     "extra_pct",
     "extra_reset",
+    "extra_currency",
     "session_pct",
     "session_reset",
     "session_reset_short",
+    "session_resets_at_iso",
     "week_all_pct",
     "week_all_reset",
     "week_all_reset_short",
+    "week_all_resets_at_iso",
     "week_sonnet_pct",
     "week_sonnet_reset",
     "week_sonnet_reset_short",
+    "week_sonnet_resets_at_iso",
 )
+
+ROLLING_30D_RAW_FIELDS = (
+    "last_30d_cost_raw",
+    "last_30d_tokens_raw",
+    "last_30d_msgs",
+    "last_30d_active_days",
+)
+
+# Total seconds per rate-limit window — used to recompute pace at merge time
+# from resets_at_iso. Anthropic's API names: five_hour, seven_day.
+WINDOW_SECONDS = {
+    "session": 5 * 3600,
+    "week_all": 7 * 24 * 3600,
+    "week_sonnet": 7 * 24 * 3600,
+}
+
+
+def _parse_iso(value: str):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def _fmt_eta(seconds: float) -> str:
+    if seconds <= 0:
+        return "now"
+    secs = int(seconds)
+    if secs >= 86400:
+        days = secs // 86400
+        hours = (secs % 86400) // 3600
+        return f"{days}d {hours}h" if hours else f"{days}d"
+    if secs >= 3600:
+        hours = secs // 3600
+        mins = (secs % 3600) // 60
+        return f"{hours}h {mins}m" if mins else f"{hours}h"
+    if secs >= 60:
+        return f"{secs // 60}m"
+    return f"{secs}s"
+
+
+def _enrich_window(out: dict, prefix: str, total_seconds: int, now_utc: datetime) -> None:
+    """Populate `<prefix>_pct_left`, `_eta`, `_pace_pct`, `_reserve_pct` for one window.
+
+    Reads the source fields (`<prefix>_pct`, `<prefix>_resets_at_iso`) already
+    on `out` and computes the derived values at merge time so the ETA stays
+    fresh on each cron tick rather than drifting from the per-machine fetch.
+    """
+    try:
+        pct = int(out.get(f"{prefix}_pct", "0") or "0")
+    except ValueError:
+        pct = 0
+    out[f"{prefix}_pct_left"] = str(max(0, 100 - pct))
+
+    reset_dt = _parse_iso(out.get(f"{prefix}_resets_at_iso", ""))
+    if not reset_dt:
+        out[f"{prefix}_eta"] = "—"
+        out[f"{prefix}_pace_pct"] = "0"
+        out[f"{prefix}_reserve_pct"] = "0"
+        out[f"{prefix}_runway_eta"] = "—"
+        return
+
+    seconds_to_reset = (reset_dt - now_utc).total_seconds()
+    out[f"{prefix}_eta"] = _fmt_eta(seconds_to_reset)
+
+    elapsed = max(0.0, total_seconds - max(0.0, seconds_to_reset))
+    pace_pct = int(round(elapsed / total_seconds * 100)) if total_seconds else 0
+    out[f"{prefix}_pace_pct"] = str(pace_pct)
+
+    pct_left = 100 - pct
+    reserve = pct_left + pace_pct - 100  # > 0 means ahead of pace
+    out[f"{prefix}_reserve_pct"] = str(max(0, reserve))
+
+    # Runway: at the current burn rate, how long does the remaining quota last?
+    # If you're on or ahead of pace, runway lasts to reset. If behind, runway
+    # is shorter — `pct_left` divided by burn_rate (used / elapsed) gives time
+    # before exhaustion.
+    if pct == 0:
+        out[f"{prefix}_runway_eta"] = _fmt_eta(seconds_to_reset)
+    elif elapsed <= 0:
+        out[f"{prefix}_runway_eta"] = _fmt_eta(seconds_to_reset)
+    else:
+        burn_per_sec = pct / elapsed
+        if burn_per_sec <= 0:
+            out[f"{prefix}_runway_eta"] = _fmt_eta(seconds_to_reset)
+        else:
+            secs_to_zero = pct_left / burn_per_sec
+            if secs_to_zero >= seconds_to_reset:
+                out[f"{prefix}_runway_eta"] = _fmt_eta(seconds_to_reset)
+            else:
+                out[f"{prefix}_runway_eta"] = _fmt_eta(secs_to_zero)
 
 
 def merge(payloads: list[dict]) -> dict:
@@ -244,8 +343,53 @@ def merge(payloads: list[dict]) -> dict:
             if k in rate_limit_source:
                 out[k] = rate_limit_source[k]
         out["has_rate_limits"] = True
+
+        # Recompute derived fields here so ETAs stay fresh on every merge tick
+        # rather than drifting from the per-machine fetch time.
+        now_utc = datetime.now(timezone.utc)
+        for prefix, total_secs in WINDOW_SECONDS.items():
+            _enrich_window(out, prefix, total_secs, now_utc)
+
+        # Extra-usage doesn't have a resets_at_iso (Anthropic's API doesn't
+        # expose one for the monthly window) — derive pct_left only.
+        try:
+            extra_pct = int(out.get("extra_pct", "0") or "0")
+        except ValueError:
+            extra_pct = 0
+        out["extra_pct_left"] = str(max(0, 100 - extra_pct))
     else:
         out["has_rate_limits"] = False
+
+    # Rolling 30-day sums across machines. last_30d_cost_raw and _tokens_raw
+    # are the canonical numbers; reformat the display strings from those so
+    # rounding stays consistent regardless of how individual machines formatted
+    # their per-machine partial sums.
+    last_30d_cost = sum(
+        float(p.get("last_30d_cost_raw", "0") or "0") for p in payloads
+    )
+    last_30d_tokens = sum(
+        int(float(p.get("last_30d_tokens_raw", "0") or "0")) for p in payloads
+    )
+    last_30d_msgs = sum(parse_int(p.get("last_30d_msgs", "0")) for p in payloads)
+    # active days is per-machine; combining requires per-day sets which the
+    # source gists don't carry. Take max as a reasonable approximation: a busy
+    # cross-machine day still only counts once, but this avoids double-counting
+    # the same day across machines.
+    last_30d_active_days = max(
+        (parse_int(p.get("last_30d_active_days", "0")) for p in payloads), default=0
+    )
+    out["last_30d_cost"] = fmt_currency(last_30d_cost)
+    out["last_30d_tokens"] = fmt_tokens(last_30d_tokens)
+    out["last_30d_msgs"] = fmt_int(last_30d_msgs)
+    out["last_30d_active_days"] = fmt_int(last_30d_active_days)
+    out["last_30d_avg"] = fmt_currency(last_30d_cost / 30.0 if last_30d_cost else 0.0)
+    out["last_30d_proj"] = fmt_currency(last_30d_cost)  # next 30 ≈ past 30 at current pace
+
+    # Newest updated_at_iso for the title bar's "Updated Xm ago".
+    out["updated_at_iso"] = max(
+        (str(p.get("updated_at_iso", "")) for p in payloads if p.get("updated_at_iso")),
+        default="",
+    )
 
     for k in CURRENCY_SUMS:
         total = sum(parse_currency(p.get(k, "0")) for p in payloads)
@@ -357,6 +501,21 @@ def merge(payloads: list[dict]) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def write_file(merged: dict, output_path: str) -> None:
+    """Write the merged payload to a local file the reverse proxy serves.
+
+    Caddy on the Hetzner host is configured (via the trmnl fork's compose +
+    Caddyfile) to bind-mount /opt/terminus-dashboard read-only and serve
+    /dashboard/* with no-cache headers. The Terminus poll extension fetches
+    that URL — predictable freshness, no GitHub raw-gist CDN cache to fight.
+    """
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+    tmp.replace(path)  # atomic on POSIX — no half-written reads from Caddy
+
+
 def write_gist(merged: dict, gist_id: str, filename: str, token: str) -> None:
     body = json.dumps(
         {"files": {filename: {"content": json.dumps(merged, indent=2)}}}
@@ -392,12 +551,26 @@ def main() -> None:
         sys.exit("no source payloads fetched")
 
     merged = merge(payloads)
-    write_gist(
-        merged, cfg["MERGED_GIST_ID"], cfg["MERGED_GIST_FILENAME"], cfg["GH_TOKEN"]
-    )
+    output_path = cfg["MERGED_OUTPUT_PATH"]
+    write_file(merged, output_path)
+    size = len(json.dumps(merged))
+
+    # Optional: also write the gist for backup / external diagnostic. Skipped
+    # silently if either MERGED_GIST_ID or GH_TOKEN is missing so a host that
+    # only serves via Caddy doesn't need the PAT.
+    if cfg.get("MERGED_GIST_ID") and cfg.get("GH_TOKEN"):
+        try:
+            write_gist(
+                merged,
+                cfg["MERGED_GIST_ID"],
+                cfg["MERGED_GIST_FILENAME"],
+                cfg["GH_TOKEN"],
+            )
+        except Exception as e:  # noqa: BLE001 — gist write is best-effort
+            sys.stderr.write(f"warn: gist write failed (file write succeeded): {e}\n")
+
     sys.stdout.write(
-        f"merged {len(payloads)} sources → gist {cfg['MERGED_GIST_ID']} "
-        f"({len(json.dumps(merged))} bytes)\n"
+        f"merged {len(payloads)} sources → {output_path} ({size} bytes)\n"
     )
 
 
