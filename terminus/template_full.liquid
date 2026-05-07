@@ -1,0 +1,160 @@
+<!--
+  Claude Code Dashboard — Terminus full layout.
+  Paste the contents of this file into the Template field of a Poll extension
+  whose URL is the raw gist `data.json`. The polled JSON lands at `source_1`.
+
+  The `<div class="view view--full">` wrapper is required for the TRMNL
+  framework CSS to size the inner layout. TRMNL Cloud's plugin renderer adds
+  this wrapper automatically; Terminus's extension layout does not, so the
+  template provides it.
+-->
+
+<div class="view view--full">
+
+<div class="layout layout--col">
+
+  {% if source_1.has_rate_limits %}
+  <div class="grid grid--cols-4 lg:grid--cols-2 lg:portrait:grid--cols-4">
+    <div class="flex flex--col flex--stretch-x">
+      <span class="label label--filled">EXTRA</span>
+      <span class="value value--small lg:value--large lg:portrait:value--small">${{ source_1.extra_spent }}</span>
+      <span class="description lg:portrait:description">{{ source_1.extra_pct }}% of ${{ source_1.extra_limit }}</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="label label--small">Week</span>
+      <span class="value value--small lg:value--large lg:portrait:value--small">${{ source_1.week_cost }}</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="label label--small">Month</span>
+      <span class="value value--small lg:value--large lg:portrait:value--small">${{ source_1.month_cost }}</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="label label--small">All Time</span>
+      <span class="value value--small lg:value--large lg:portrait:value--small">${{ source_1.all_time_cost }}</span>
+    </div>
+  </div>
+
+  <div class="progress-bar stretch-x">
+    <div class="content">
+      <span class="label">Session &middot; {{ source_1.session_reset_short }}</span>
+      <span class="value value--xxsmall">{{ source_1.session_pct }}%</span>
+    </div>
+    <div class="track"><div class="fill" style="width:{{ source_1.session_pct }}%"></div></div>
+  </div>
+
+  <div class="progress-bar stretch-x">
+    <div class="content">
+      <span class="label">Week All &middot; {{ source_1.week_all_reset_short }}</span>
+      <span class="value value--xxsmall">{{ source_1.week_all_pct }}%</span>
+    </div>
+    <div class="track"><div class="fill" style="width:{{ source_1.week_all_pct }}%"></div></div>
+  </div>
+  {% else %}
+  <div class="grid grid--cols-4">
+    <div class="flex flex--col flex--stretch-x">
+      <span class="label label--small">Today</span>
+      <span class="value value--small lg:value--large">${{ source_1.today_cost }}</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="label label--small">Week</span>
+      <span class="value value--small lg:value--large">${{ source_1.week_cost }}</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="label label--small">Month</span>
+      <span class="value value--small lg:value--large">${{ source_1.month_cost }}</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="label label--small">All Time</span>
+      <span class="value value--small lg:value--large">${{ source_1.all_time_cost }}</span>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="grid grid--cols-5">
+    <div class="flex flex--col flex--stretch-x">
+      <span class="label label--small">Input</span>
+      <span class="value value--xxsmall">{{ source_1.today_input }}</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="label label--small">Output</span>
+      <span class="value value--xxsmall">{{ source_1.today_output }}</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="label label--small">Cache Read</span>
+      <span class="value value--xxsmall">{{ source_1.today_cache_read }}</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="label label--small">Cache Write</span>
+      <span class="value value--xxsmall">{{ source_1.today_cache_write }}</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="label label--small">Total</span>
+      <span class="value value--small">{{ source_1.today_tokens }}</span>
+    </div>
+  </div>
+
+  <div class="grid grid--cols-5">
+    <div class="flex flex--col flex--stretch-x">
+      <span class="value value--xxsmall">~${{ source_1.today_cost }}</span>
+      <span class="label label--small">API equiv.</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="value value--xxsmall">{{ source_1.today_msgs }}</span>
+      <span class="label label--small">Messages</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="value value--xxsmall">{{ source_1.cache_pct }}%</span>
+      <span class="label label--small">Cache</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="value value--xxsmall">${{ source_1.cache_savings }}</span>
+      <span class="label label--small">Saved</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="value value--xxsmall">${{ source_1.cost_per_req }}</span>
+      <span class="label label--small">Per Req</span>
+    </div>
+  </div>
+
+  <div class="grid grid--cols-6 lg:grid--cols-3 lg:portrait:grid--cols-6">
+    <div class="flex flex--col flex--stretch-x">
+      <span class="value value--xxsmall">{{ source_1.active_now }}</span>
+      <span class="label label--small">Running</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="value value--xxsmall">{{ source_1.sessions_today }}</span>
+      <span class="label label--small">Today</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="value value--xxsmall">{{ source_1.week_sessions }}</span>
+      <span class="label label--small">Week</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="value value--xxsmall">{{ source_1.month_sessions }}</span>
+      <span class="label label--small">Month</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="value value--xxsmall">{{ source_1.all_sessions }}</span>
+      <span class="label label--small">Total</span>
+    </div>
+    <div class="flex flex--col flex--stretch-x">
+      <span class="value value--xxsmall">{{ source_1.streak }}d</span>
+      <span class="label label--small">Streak</span>
+    </div>
+  </div>
+
+  <div class="flex flex--row gap--small">
+    <span class="label label--filled">{{ source_1.primary_model }} {{ source_1.primary_pct }}%</span>
+    <span class="label label--small">{{ source_1.hours_today }} coded</span>
+    {% if source_1.sonnet_pct != "0" %}<span class="label label--small">&middot; sonnet {{ source_1.sonnet_pct }}%</span>{% endif %}
+    {% if source_1.haiku_pct != "0" %}<span class="label label--small">&middot; haiku {{ source_1.haiku_pct }}%</span>{% endif %}
+  </div>
+
+</div>
+
+<div class="title_bar">
+  <span class="title">Claude Code &middot; {{ source_1.plugin_count }} plugins &middot; {{ source_1.mcp_count }} MCPs &middot; ~${{ source_1.projected_cost }} proj</span>
+  <span class="instance">{{ source_1.updated_at }}</span>
+</div>
+
+</div><!-- view view--full -->
