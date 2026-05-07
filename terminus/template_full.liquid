@@ -17,37 +17,33 @@
 <div class="{{extension.css_classes}}">
 <div class="view view--full">
 
-<div class="layout layout--col gap--space-between">
+<div class="layout layout--col layout--stretch-x gap--space-between">
 
   <!-- ───────────── rate-limit bars ───────────── -->
-  <div class="flex flex--col gap--small flex--stretch-x">
-
-    <div class="progress-bar stretch-x">
-      <div class="content">
-        <span class="label label--small">Session</span>
-        <span class="value value--xxsmall">
-          {{ source_1.session_pct_left }}% left · resets in {{ source_1.session_eta }}
-        </span>
-      </div>
-      <div class="track">
-        <div class="fill" style="width:{{ source_1.session_pct }}%"></div>
-        <div class="fill" style="width:2px;left:{{ source_1.session_pace_pct }}%;background:#000;"></div>
-      </div>
+  <div class="progress-bar stretch-x">
+    <div class="content">
+      <span class="label label--small">Session</span>
+      <span class="value value--xxsmall">
+        {{ source_1.session_pct_left }}% left · resets in {{ source_1.session_eta }}
+      </span>
     </div>
-
-    <div class="progress-bar stretch-x">
-      <div class="content">
-        <span class="label label--small">Weekly</span>
-        <span class="value value--xxsmall">
-          {{ source_1.week_all_pct_left }}% left{% if source_1.week_all_reserve_pct != "0" %} · {{ source_1.week_all_reserve_pct }}% reserve{% endif %} · resets in {{ source_1.week_all_eta }}
-        </span>
-      </div>
-      <div class="track">
-        <div class="fill" style="width:{{ source_1.week_all_pct }}%"></div>
-        <div class="fill" style="width:2px;left:{{ source_1.week_all_pace_pct }}%;background:#000;"></div>
-      </div>
+    <div class="track">
+      <div class="fill" style="width:{{ source_1.session_pct }}%"></div>
+      <div class="fill" style="width:2px;left:{{ source_1.session_pace_pct }}%;background:#000;"></div>
     </div>
+  </div>
 
+  <div class="progress-bar stretch-x">
+    <div class="content">
+      <span class="label label--small">Weekly</span>
+      <span class="value value--xxsmall">
+        {{ source_1.week_all_pct_left }}% left{% if source_1.week_all_reserve_pct != "0" %} · {{ source_1.week_all_reserve_pct }}% reserve{% endif %} · resets in {{ source_1.week_all_eta }}
+      </span>
+    </div>
+    <div class="track">
+      <div class="fill" style="width:{{ source_1.week_all_pct }}%"></div>
+      <div class="fill" style="width:2px;left:{{ source_1.week_all_pace_pct }}%;background:#000;"></div>
+    </div>
   </div>
 
   <!-- ───────────── cost / efficiency hero ───────────── -->
