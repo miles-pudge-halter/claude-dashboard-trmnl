@@ -133,20 +133,16 @@ def maybe_run_scraper() -> dict:
     }
 
 
-def _rolling_30d() -> dict:
-    """Add rolling-30d cost/token totals; never blocks the main flow."""
-    try:
-        import rolling_30d  # noqa: WPS433 — local import keeps optional cost off cold path
-        return rolling_30d.scan()
-    except Exception as e:  # noqa: BLE001 — broad catch is intentional; this is a non-critical augmentation
-        sys.stderr.write(f"rolling_30d failed: {e}\n")
-        return {}
-
-
 def merge_payload() -> dict:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    stats = session_stats.gather_stats()
-    rolling = _rolling_30d()
+
+    # Use our codex-bar-aligned scanner instead of session_stats.gather_stats():
+    # the upstream version sums every JSONL line including streaming chunks
+    # with cumulative token counts (3-5× over-count) and applies a 6× cost
+    # multiplier for opus-4-6 fast mode that codex bar doesn't. scanner.py
+    # produces the same dict shape so downstream code is unchanged.
+    import scanner  # noqa: WPS433
+    stats = scanner.gather_stats()
 
     # Zeroed placeholders for the rate-limit fields. Overridden by the scraper
     # output below when running on a machine with pexpect+pyte (macOS / Linux).
@@ -170,7 +166,6 @@ def merge_payload() -> dict:
         **rate_limit_defaults,
         **rate_limits,
         **stats,
-        **rolling,
         "updated_at": datetime.now().strftime("%b %d at %I:%M%p").replace(" 0", " "),
         "updated_at_iso": datetime.now().astimezone().isoformat(),
     }
