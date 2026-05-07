@@ -3,12 +3,25 @@
   Paste the contents of this file into the Template field of a Poll extension
   whose URL is the raw gist `data.json`. The polled JSON lands at `source_1`.
 
-  The `<div class="view view--full">` wrapper is required for the TRMNL
-  framework CSS to size the inner layout. TRMNL Cloud's plugin renderer adds
-  this wrapper automatically; Terminus's extension layout does not, so the
-  template provides it.
+  The two outer wrappers are required:
+
+    {{extension.css_classes}}    expands to something like
+                                 "screen screen--1bit screen--md" based on the
+                                 device model. This is what binds the TRMNL
+                                 framework CSS variables that drive colors and
+                                 sizes — without it, progress-bar fills,
+                                 emphasis backgrounds, etc. fall through to
+                                 their `transparent` defaults and render
+                                 invisible.
+    view view--full              gives the inner layout/grid/flex classes a
+                                 sized box to lay out within.
+
+  TRMNL Cloud's plugin renderer adds these automatically; Terminus does not.
+  See app/aspects/extensions/defaults.rb in the Terminus source for the
+  reference structure.
 -->
 
+<div class="{{extension.css_classes}}">
 <div class="view view--full">
 
 <div class="layout layout--col">
@@ -158,3 +171,4 @@
 </div>
 
 </div><!-- view view--full -->
+</div><!-- screen / extension.css_classes -->
