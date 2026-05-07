@@ -17,6 +17,7 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "launchd-setup"))
@@ -44,42 +45,62 @@ def _strip_tz(value: str) -> str:
     return re.sub(r"\s*\(.*?\)\s*$", "", str(value))
 
 
-def maybe_run_scraper() -> dict:
-    """Run claude_usage_scraper.py if pexpect+pyte are available.
-
-    The scraper drives the Claude CLI's `/usage` TUI via pexpect+pyte and
-    answers session / week_all / week_sonnet / extra rate-limit blocks. The
-    pexpect path is POSIX-only, so on Windows or when the deps are missing
-    this returns an empty dict and the caller falls back to zeroed placeholders.
-    """
-    if platform.system() == "Windows":
-        return {}
-
-    scraper = ROOT / "launchd-setup" / "claude_usage_scraper.py"
-    if not scraper.exists():
-        return {}
-
+def _run_usage_source(script_path: Path, label: str) -> Optional[dict]:
+    """Subprocess a JSON-on-stdout usage source script and parse its output."""
+    if not script_path.exists():
+        return None
     try:
         result = subprocess.run(
-            [sys.executable, str(scraper)],
+            [sys.executable, str(script_path)],
             capture_output=True,
             text=True,
             timeout=60,
         )
     except (subprocess.TimeoutExpired, OSError) as e:
-        sys.stderr.write(f"scraper invocation failed: {e}\n")
-        return {}
-
+        sys.stderr.write(f"{label} invocation failed: {e}\n")
+        return None
     if result.returncode != 0:
         sys.stderr.write(
-            f"scraper exited {result.returncode}: {result.stderr.strip()[:400]}\n"
+            f"{label} exited {result.returncode}: {result.stderr.strip()[:400]}\n"
         )
-        return {}
-
+        return None
     try:
-        metrics = json.loads(result.stdout)
+        return json.loads(result.stdout)
     except json.JSONDecodeError as e:
-        sys.stderr.write(f"scraper output not JSON ({e}): {result.stdout[:200]!r}\n")
+        sys.stderr.write(f"{label} output not JSON ({e}): {result.stdout[:200]!r}\n")
+        return None
+
+
+def maybe_run_scraper() -> dict:
+    """Resolve rate-limit data for the gist payload.
+
+    Order:
+      1. claude_oauth_usage.py — direct OAuth call to Anthropic's usage API,
+         the same path steipete/codexbar uses. Cross-platform; preferred.
+      2. launchd-setup/claude_usage_scraper.py — pexpect+pyte against the
+         Claude CLI TUI; macOS only and brittle, kept as a fallback for
+         environments where the OAuth token lacks `user:profile` scope.
+
+    Returns a flat dict ready to merge into the gist payload, or {} if both
+    sources are unavailable.
+    """
+    here = Path(__file__).resolve().parent
+    metrics: Optional[dict] = None
+    for script_path, label in (
+        (here / "claude_oauth_usage.py", "oauth-usage"),
+        (ROOT / "launchd-setup" / "claude_usage_scraper.py", "tui-scraper"),
+    ):
+        candidate = _run_usage_source(script_path, label)
+        if candidate and any(
+            isinstance(v, dict) and v.get("pct", "0") != "0"
+            for v in candidate.values()
+        ):
+            metrics = candidate
+            break
+        if candidate and metrics is None:
+            metrics = candidate  # zero values, but better than nothing if no other source works
+
+    if metrics is None:
         return {}
 
     def _get(key: str, field: str, default: str = "—") -> str:

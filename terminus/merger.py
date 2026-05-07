@@ -140,6 +140,35 @@ def fmt_int(value: int) -> str:
     return str(int(value))
 
 
+def _parse_hours_minutes(value) -> float:
+    """Return hours from `'21m'`, `'4.1h'`, `'4.0h'`, `'—'`, `'0'`."""
+    s = str(value).strip()
+    if not s or s in ("—", "-"):
+        return 0.0
+    if s.endswith("m") and not s.endswith("am") and not s.endswith("pm"):
+        try:
+            return float(s[:-1].strip()) / 60.0
+        except ValueError:
+            return 0.0
+    if s.endswith("h"):
+        try:
+            return float(s[:-1].strip())
+        except ValueError:
+            return 0.0
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
+def _fmt_hours_minutes(hours: float) -> str:
+    if hours <= 0:
+        return "—"
+    if hours < 1:
+        return f"{int(round(hours * 60))}m"
+    return f"{hours:.1f}h"
+
+
 # ---------------------------------------------------------------------------
 # Merge.
 # ---------------------------------------------------------------------------
@@ -233,12 +262,13 @@ def merge(payloads: list[dict]) -> dict:
     for k in INT_MAXES:
         out[k] = fmt_int(max((parse_int(p.get(k, "0")) for p in payloads), default=0))
 
-    # Hours today: max float, format with 'h' suffix.
-    hours = max(
-        (parse_float(str(p.get("hours_today", "0")).rstrip("h")) for p in payloads),
-        default=0.0,
+    # Hours today: SUM minutes across machines, then format. session_stats
+    # emits "21m" for minutes and "X.Yh" once it crosses an hour. parse_currency
+    # would interpret a lowercase "m" as million; that bug surfaced as
+    # "21000000.0h coded" on the device. Parse explicitly here.
+    out["hours_today"] = _fmt_hours_minutes(
+        sum(_parse_hours_minutes(p.get("hours_today", "0")) for p in payloads)
     )
-    out["hours_today"] = f"{hours:.1f}h"
 
     # Cache pct / cost-per-req / daily avg recomputed from raw sums.
     today_cache_total = parse_tokens(out["today_cache_read"]) + parse_tokens(
