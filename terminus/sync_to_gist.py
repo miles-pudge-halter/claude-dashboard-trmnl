@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -39,13 +40,79 @@ GIST_ID = os.environ.get("CLAUDE_DASHBOARD_GIST_ID", "").strip()
 GIST_FILENAME = "data.json"
 
 
+def _strip_tz(value: str) -> str:
+    return re.sub(r"\s*\(.*?\)\s*$", "", str(value))
+
+
+def maybe_run_scraper() -> dict:
+    """Run claude_usage_scraper.py if pexpect+pyte are available.
+
+    The scraper drives the Claude CLI's `/usage` TUI via pexpect+pyte and
+    answers session / week_all / week_sonnet / extra rate-limit blocks. The
+    pexpect path is POSIX-only, so on Windows or when the deps are missing
+    this returns an empty dict and the caller falls back to zeroed placeholders.
+    """
+    if platform.system() == "Windows":
+        return {}
+
+    scraper = ROOT / "launchd-setup" / "claude_usage_scraper.py"
+    if not scraper.exists():
+        return {}
+
+    try:
+        result = subprocess.run(
+            [sys.executable, str(scraper)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (subprocess.TimeoutExpired, OSError) as e:
+        sys.stderr.write(f"scraper invocation failed: {e}\n")
+        return {}
+
+    if result.returncode != 0:
+        sys.stderr.write(
+            f"scraper exited {result.returncode}: {result.stderr.strip()[:400]}\n"
+        )
+        return {}
+
+    try:
+        metrics = json.loads(result.stdout)
+    except json.JSONDecodeError as e:
+        sys.stderr.write(f"scraper output not JSON ({e}): {result.stdout[:200]!r}\n")
+        return {}
+
+    def _get(key: str, field: str, default: str = "—") -> str:
+        return str(metrics.get(key, {}).get(field, default))
+
+    session_reset = _get("session", "reset")
+    week_all_reset = _get("week_all", "reset")
+    week_sonnet_reset = _get("week_sonnet", "reset")
+    extra_reset = _get("extra", "reset")
+
+    return {
+        "session_pct": _get("session", "pct", "0"),
+        "session_reset": session_reset,
+        "session_reset_short": _strip_tz(session_reset),
+        "week_all_pct": _get("week_all", "pct", "0"),
+        "week_all_reset": week_all_reset,
+        "week_all_reset_short": _strip_tz(week_all_reset),
+        "week_sonnet_pct": _get("week_sonnet", "pct", "0"),
+        "week_sonnet_reset": week_sonnet_reset,
+        "week_sonnet_reset_short": _strip_tz(week_sonnet_reset),
+        "extra_pct": _get("extra", "pct", "0"),
+        "extra_spent": _get("extra", "spent", "0"),
+        "extra_limit": _get("extra", "limit", "0"),
+        "extra_reset": _strip_tz(extra_reset),
+        "has_rate_limits": True,
+    }
+
+
 def merge_payload() -> dict:
     stats = session_stats.gather_stats()
 
-    # Fields normally produced by claude_usage_scraper.py on macOS, which uses
-    # pexpect+pyte against the Claude CLI's TUI /usage screen. That stack does
-    # not work on Windows, so emit zeroed placeholders here. The Terminus
-    # template hides the relevant rows when these are absent.
+    # Zeroed placeholders for the rate-limit fields. Overridden by the scraper
+    # output below when running on a machine with pexpect+pyte (macOS / Linux).
     rate_limit_defaults = {
         "extra_spent": "0",
         "extra_limit": "0",
@@ -60,8 +127,11 @@ def merge_payload() -> dict:
         "has_rate_limits": False,
     }
 
+    rate_limits = maybe_run_scraper()
+
     return {
         **rate_limit_defaults,
+        **rate_limits,
         **stats,
         "updated_at": datetime.now().strftime("%b %d at %I:%M%p").replace(" 0", " "),
     }

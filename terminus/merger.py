@@ -181,11 +181,42 @@ INT_MAXES = ("streak", "active_days", "longest_session")
 DAY_BUCKETS = tuple(f"d{i}" for i in range(7))
 
 
+RATE_LIMIT_FIELDS = (
+    "extra_spent",
+    "extra_limit",
+    "extra_pct",
+    "extra_reset",
+    "session_pct",
+    "session_reset",
+    "session_reset_short",
+    "week_all_pct",
+    "week_all_reset",
+    "week_all_reset_short",
+    "week_sonnet_pct",
+    "week_sonnet_reset",
+    "week_sonnet_reset_short",
+)
+
+
 def merge(payloads: list[dict]) -> dict:
     if not payloads:
         return {}
 
-    out: dict = {"has_rate_limits": False}
+    out: dict = {}
+
+    # Pass through rate-limit fields from whichever payload has has_rate_limits.
+    # These fields aren't sensibly summed (extra_pct is per-account, not per
+    # machine), so first-wins from a payload that ran the scraper.
+    rate_limit_source = next(
+        (p for p in payloads if p.get("has_rate_limits") is True), None
+    )
+    if rate_limit_source:
+        for k in RATE_LIMIT_FIELDS:
+            if k in rate_limit_source:
+                out[k] = rate_limit_source[k]
+        out["has_rate_limits"] = True
+    else:
+        out["has_rate_limits"] = False
 
     for k in CURRENCY_SUMS:
         total = sum(parse_currency(p.get(k, "0")) for p in payloads)

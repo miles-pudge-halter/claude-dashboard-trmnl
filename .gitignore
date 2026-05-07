@@ -218,3 +218,4 @@ __marimo__/
 terminus/.gist_id
 terminus/.env
 terminus/.env.local
+terminus/.venv/

@@ -45,14 +45,23 @@ if [[ ! -f "${TERMINUS_DIR}/sync_to_gist.py" ]]; then
 Copy sync_to_gist.py and template_full.liquid from the Windows box into ${TERMINUS_DIR}/, then re-run this script."
 fi
 
-say "validating sync_to_gist.py runs locally (dry — no gist push)"
-CLAUDE_DASHBOARD_GIST_ID="" python3 -c "
+say "creating venv at ${TERMINUS_DIR}/.venv with pexpect + pyte for the rate-limit scraper"
+VENV_DIR="${TERMINUS_DIR}/.venv"
+if [[ ! -d "${VENV_DIR}" ]]; then
+  python3 -m venv "${VENV_DIR}"
+fi
+"${VENV_DIR}/bin/python" -m pip install --quiet --upgrade pip
+"${VENV_DIR}/bin/python" -m pip install --quiet pexpect pyte
+PY_BIN="${VENV_DIR}/bin/python"
+
+say "validating sync_to_gist.py runs locally (dry — no gist push; scraper attempted, may take ~30s)"
+CLAUDE_DASHBOARD_GIST_ID="" "${PY_BIN}" -c "
 import sys
 sys.path.insert(0, '${TERMINUS_DIR}')
 from sync_to_gist import merge_payload
 import json
 d = merge_payload()
-print('today_cost:', d['today_cost'], 'plugin_count:', d['plugin_count'], 'mcp_count:', d['mcp_count'])
+print('today_cost:', d['today_cost'], 'plugin_count:', d['plugin_count'], 'mcp_count:', d['mcp_count'], 'has_rate_limits:', d['has_rate_limits'], 'session_pct:', d.get('session_pct'))
 " || fail "sync_to_gist.py failed; check ~/.claude/projects/ exists and has session jsonls"
 
 if [[ -f "${TERMINUS_DIR}/.gist_id" ]]; then
@@ -81,7 +90,6 @@ mkdir -p "${LOG_DIR}"
 
 say "writing launchd plist to ${PLIST_PATH}"
 GH_BIN=$(command -v gh)
-PY_BIN=$(command -v python3)
 cat > "${PLIST_PATH}" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
