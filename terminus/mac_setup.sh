@@ -8,7 +8,7 @@
 #   3. Drops the terminus/ adapter dir into the clone.
 #   4. Creates a *new* secret gist on whatever GitHub account `gh` is currently
 #      authenticated as.
-#   5. Writes a launchd plist that runs sync_to_gist.py every 15 minutes and
+#   5. Writes a launchd plist that runs sync_to_gist.py every 10 minutes and
 #      loads it.
 #
 # Re-runnable: detects existing state and skips already-completed steps.
@@ -112,7 +112,7 @@ cat > "${PLIST_PATH}" <<PLIST
     <string>$(dirname "${GH_BIN}"):/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
   <key>StartInterval</key>
-  <integer>900</integer>
+  <integer>600</integer>
   <key>RunAtLoad</key>
   <true/>
   <key>StandardOutPath</key>
